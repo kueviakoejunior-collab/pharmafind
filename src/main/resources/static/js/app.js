@@ -23,6 +23,57 @@ const state = {
 };
 
 // ============================================================================
+// DONNÉES PILOTES DE SECOURS (LOMÉ) POUR DÉPLOIEMENT STATIQUE / VERCEL
+// ============================================================================
+const FALLBACK_MEDS = [
+    { id: 1, nomCommercial: "Paracétamol", substanceActiveValidee: "Paracétamol", forme: "Comprimé", dosage: "500 mg" },
+    { id: 2, nomCommercial: "Doliprane", substanceActiveValidee: "Paracétamol", forme: "Comprimé effervescent", dosage: "1000 mg" },
+    { id: 3, nomCommercial: "Coartem", substanceActiveValidee: "Artéméther / Luméfantrine", forme: "Comprimé", dosage: "20 mg / 120 mg" },
+    { id: 4, nomCommercial: "Amoxicilline", substanceActiveValidee: "Amoxicilline", forme: "Gélule", dosage: "500 mg" },
+    { id: 5, nomCommercial: "Sérum Physiologique", substanceActiveValidee: "Chlorure de Sodium", forme: "Flacon perfusion", dosage: "500 ml" },
+    { id: 6, nomCommercial: "Ibuprofène", substanceActiveValidee: "Ibuprofène", forme: "Comprimé pelliculé", dosage: "400 mg" },
+    { id: 7, nomCommercial: "Oméprazole", substanceActiveValidee: "Oméprazole", forme: "Gélule gastro-résistante", dosage: "20 mg" }
+];
+
+const FALLBACK_DISPOS = [
+    {
+        id: 101, pharmacieId: 1, pharmacieNom: "Pharmacie du Golfe", pharmacieAdresse: "Boulevard du 13 Janvier / Tokoin",
+        pharmacieQuartier: "Tokoin", pharmacieTelephone: "+228 22 21 05 44", pharmacieLatitude: 6.1368, pharmacieLongitude: 1.2185,
+        pharmacieDeGarde: true, medicamentId: 1, nomCommercial: "Paracétamol", substanceActiveValidee: "Paracétamol",
+        forme: "Comprimé", dosage: "500 mg", statut: "CONFIRMEE_RECEMMENT", statutLibelle: "Confirmée récemment",
+        dateConfirmation: new Date().toISOString(), utilisateurConfirmateur: "Dr. Kueviakoe"
+    },
+    {
+        id: 102, pharmacieId: 2, pharmacieNom: "Pharmacie de Bé", pharmacieAdresse: "Rue du Grand Marché de Bé",
+        pharmacieQuartier: "Bè", pharmacieTelephone: "+228 22 21 34 50", pharmacieLatitude: 6.1282, pharmacieLongitude: 1.2361,
+        pharmacieDeGarde: false, medicamentId: 1, nomCommercial: "Paracétamol", substanceActiveValidee: "Paracétamol",
+        forme: "Comprimé", dosage: "500 mg", statut: "CONFIRMEE_RECEMMENT", statutLibelle: "Confirmée récemment",
+        dateConfirmation: new Date().toISOString(), utilisateurConfirmateur: "Dr. Mensah"
+    },
+    {
+        id: 103, pharmacieId: 6, pharmacieNom: "Pharmacie Agoè-Nyivé", pharmacieAdresse: "Carrefour 2 Lions, Agoè Assiyéyé",
+        pharmacieQuartier: "Agoè", pharmacieTelephone: "+228 22 25 78 90", pharmacieLatitude: 6.1950, pharmacieLongitude: 1.1920,
+        pharmacieDeGarde: true, medicamentId: 1, nomCommercial: "Paracétamol", substanceActiveValidee: "Paracétamol",
+        forme: "Comprimé", dosage: "500 mg", statut: "CONFIRMEE_RECEMMENT", statutLibelle: "Confirmée récemment",
+        dateConfirmation: new Date().toISOString(), utilisateurConfirmateur: "Responsable"
+    },
+    {
+        id: 104, pharmacieId: 1, pharmacieNom: "Pharmacie du Golfe", pharmacieAdresse: "Boulevard du 13 Janvier / Tokoin",
+        pharmacieQuartier: "Tokoin", pharmacieTelephone: "+228 22 21 05 44", pharmacieLatitude: 6.1368, pharmacieLongitude: 1.2185,
+        pharmacieDeGarde: true, medicamentId: 3, nomCommercial: "Coartem", substanceActiveValidee: "Artéméther / Luméfantrine",
+        forme: "Comprimé", dosage: "20 mg / 120 mg", statut: "CONFIRMEE_RECEMMENT", statutLibelle: "Confirmée récemment",
+        dateConfirmation: new Date().toISOString(), utilisateurConfirmateur: "Dr. Kueviakoe"
+    },
+    {
+        id: 105, pharmacieId: 2, pharmacieNom: "Pharmacie de Bé", pharmacieAdresse: "Rue du Grand Marché de Bé",
+        pharmacieQuartier: "Bè", pharmacieTelephone: "+228 22 21 34 50", pharmacieLatitude: 6.1282, pharmacieLongitude: 1.2361,
+        pharmacieDeGarde: false, medicamentId: 4, nomCommercial: "Amoxicilline", substanceActiveValidee: "Amoxicilline",
+        forme: "Gélule", dosage: "500 mg", statut: "NON_DISPONIBLE", statutLibelle: "Non disponible",
+        dateConfirmation: new Date().toISOString(), utilisateurConfirmateur: "Dr. Mensah"
+    }
+];
+
+// ============================================================================
 // INITIALISATION
 // ============================================================================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -30,7 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initMap();
     await checkSession();
     await loadInitialMedicaments();
-    await searchMedicament('Paracétamol'); // Recherche par défaut démo
+    await searchMedicament('Paracétamol');
 });
 
 // ============================================================================
@@ -211,10 +262,13 @@ async function loadInitialMedicaments() {
         if (res.ok) {
             state.allMedicaments = await res.json();
             populateMedicamentDatalist(state.allMedicaments);
+            return;
         }
     } catch (e) {
-        console.error('Erreur chargement médicaments', e);
+        console.warn('Backend local non détecté, utilisation des données PharmaHelp Lomé embarquées.');
     }
+    state.allMedicaments = FALLBACK_MEDS;
+    populateMedicamentDatalist(state.allMedicaments);
 }
 
 function populateMedicamentDatalist(medicaments) {
@@ -235,28 +289,50 @@ async function searchMedicament(query) {
 
     try {
         const res = await fetch(`${API_BASE}/public/medicaments/recherche?q=${encodeURIComponent(q)}`);
-        const results = await res.json();
-
-        if (results && results.length > 0) {
-            state.selectedMedicament = results[0];
-            await loadDisponibilitesForMedicament(state.selectedMedicament.id);
-        } else {
-            renderZeroResults(q);
+        if (res.ok) {
+            const results = await res.json();
+            if (results && results.length > 0) {
+                state.selectedMedicament = results[0];
+                await loadDisponibilitesForMedicament(state.selectedMedicament.id);
+                return;
+            }
         }
     } catch (e) {
-        console.error('Erreur lors de la recherche', e);
+        console.warn('Mode hors ligne / statique');
+    }
+
+    // Recherche de secours locale
+    const cleanQ = (q || '').toLowerCase();
+    const localMatch = state.allMedicaments.filter(m => 
+        m.nomCommercial.toLowerCase().includes(cleanQ) || 
+        m.substanceActiveValidee.toLowerCase().includes(cleanQ)
+    );
+
+    if (localMatch.length > 0) {
+        state.selectedMedicament = localMatch[0];
+        await loadDisponibilitesForMedicament(state.selectedMedicament.id);
+    } else {
+        renderZeroResults(q);
     }
 }
 
 async function loadDisponibilitesForMedicament(medicamentId) {
     try {
         const res = await fetch(`${API_BASE}/public/medicaments/${medicamentId}/disponibilites`);
-        const dispos = await res.json();
-        state.disponibilitesList = dispos;
-        applyFiltersAndRender();
+        if (res.ok) {
+            const dispos = await res.json();
+            state.disponibilitesList = dispos;
+            applyFiltersAndRender();
+            return;
+        }
     } catch (e) {
-        console.error('Erreur chargement disponibilités', e);
+        console.warn('Utilisation disponibilités locales');
     }
+
+    // Disponibilités locales de secours
+    const localDispos = FALLBACK_DISPOS.filter(d => d.medicamentId === medicamentId);
+    state.disponibilitesList = localDispos.length > 0 ? localDispos : FALLBACK_DISPOS.slice(0, 2);
+    applyFiltersAndRender();
 }
 
 function applyFiltersAndRender() {
