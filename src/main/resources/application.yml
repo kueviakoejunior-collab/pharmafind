@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: pharmafind
+  profiles:
+    active: dev
+
+server:
+  port: ${PORT:8080}
+
+pharmafind:
+  jwt:
+    secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+    expiration-ms: 86400000 # 24 heures
+  availability:
+    expiry-hours: 48 # Au-delà de 48h, statut 'A_CONFIRMER'

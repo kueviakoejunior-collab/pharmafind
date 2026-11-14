@@ -1,0 +1,961 @@
+/**
+ * PHARMAFIND — APPLICATION JAVASCRIPT FRONTEND
+ * Conforme au dossier de conception ADN Golfe 1 (Lomé, Togo)
+ */
+
+const API_BASE = '/api/v1';
+
+const state = {
+    currentUser: null,
+    token: localStorage.getItem('pharmafind_token') || null,
+    currentTab: 'search',
+    allMedicaments: [],
+    selectedMedicament: null,
+    pharmaciesList: [],
+    disponibilitesList: [],
+    map: null,
+    markersLayer: null,
+    selectedPharmacieForReport: null
+};
+
+// ============================================================================
+// INITIALISATION
+// ============================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    initNavigation();
+    initMap();
+    await checkSession();
+    await loadInitialMedicaments();
+    await searchMedicament('Paracétamol'); // Recherche par défaut pour la démo immédiate
+});
+
+// ============================================================================
+// GESTION DES ONGLETS / NAVIGATION
+// ============================================================================
+function initNavigation() {
+    const tabs = document.querySelectorAll('.nav-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            const tabName = e.target.getAttribute('data-tab');
+            switchTab(tabName);
+        });
+    });
+}
+
+function switchTab(tabName) {
+    state.currentTab = tabName;
+    document.querySelectorAll('.nav-tab').forEach(t => {
+        t.classList.toggle('active', t.getAttribute('data-tab') === tabName);
+    });
+
+    document.getElementById('view-search').style.display = (tabName === 'search') ? 'block' : 'none';
+    document.getElementById('view-gardes').style.display = (tabName === 'gardes') ? 'block' : 'none';
+    document.getElementById('view-pro').style.display = (tabName === 'pro') ? 'block' : 'none';
+    document.getElementById('view-admin').style.display = (tabName === 'admin') ? 'block' : 'none';
+
+    if (tabName === 'gardes') {
+        loadGardesView();
+    } else if (tabName === 'pro') {
+        loadProView();
+    } else if (tabName === 'admin') {
+        loadAdminView();
+    } else if (tabName === 'search' && state.map) {
+        setTimeout(() => state.map.invalidateSize(), 200);
+    }
+}
+
+// ============================================================================
+// CARTOGRAPHIE LEAFLET (LOMÉ, TOGO)
+// ============================================================================
+function initMap() {
+    const mapElement = document.getElementById('lomeMap');
+    if (!mapElement) return;
+
+    // Coordonnées de Lomé : 6.1375, 1.2125
+    state.map = L.map('lomeMap').setView([6.1375, 1.2125], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors | PharmaFind Togo',
+        maxZoom: 18
+    }).addTo(state.map);
+
+    state.markersLayer = L.layerGroup().addTo(state.map);
+}
+
+function updateMapMarkers(pharmacies) {
+    if (!state.map || !state.markersLayer) return;
+
+    state.markersLayer.clearLayers();
+    const bounds = [];
+
+    pharmacies.forEach(p => {
+        if (p.latitude && p.longitude) {
+            const isGarde = p.estDeGarde || p.pharmacieDeGarde;
+            const markerColor = isGarde ? '#d97706' : '#0d9488';
+
+            const customIcon = L.divIcon({
+                className: 'custom-map-pin',
+                html: `<div style="background-color: ${markerColor}; width: 28px; height: 28px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: bold;">✚</div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+            });
+
+            const marker = L.marker([p.latitude, p.longitude], { icon: customIcon });
+
+            const popupContent = `
+                <div style="font-size: 13px;">
+                    <strong style="color: #0f766e; font-size: 14px;">${p.nom || p.pharmacieNom}</strong><br/>
+                    <span>📍 ${p.quartier || p.pharmacieQuartier || ''}</span><br/>
+                    <span>📞 <a href="tel:${p.telephone || p.pharmacieTelephone}">${p.telephone || p.pharmacieTelephone}</a></span><br/>
+                    ${isGarde ? '<span style="color:#b45309; font-weight:bold;">⚡ De garde cette semaine</span><br/>' : ''}
+                    <button onclick="focusCard(${p.id || p.pharmacieId})" style="margin-top:6px; background:#0d9488; color:white; border:none; border-radius:4px; padding:3px 8px; cursor:pointer;">Voir la fiche</button>
+                </div>
+            `;
+            marker.bindPopup(popupContent);
+            state.markersLayer.addLayer(marker);
+            bounds.push([p.latitude, p.longitude]);
+        }
+    });
+
+    if (bounds.length > 0) {
+        state.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
+}
+
+// ============================================================================
+// RECHERCHE PUBLIQUE DE MÉDICAMENTS
+// ============================================================================
+async function loadInitialMedicaments() {
+    try {
+        const res = await fetch(`${API_BASE}/public/medicaments`);
+        if (res.ok) {
+            state.allMedicaments = await res.json();
+            populateMedicamentDatalist(state.allMedicaments);
+        }
+    } catch (e) {
+        console.error('Erreur chargement médicaments', e);
+    }
+}
+
+function populateMedicamentDatalist(medicaments) {
+    const datalist = document.getElementById('medicamentSuggestions');
+    if (!datalist) return;
+    datalist.innerHTML = '';
+    medicaments.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.nomCommercial;
+        opt.label = `${m.dosage} (${m.forme}) - DCI: ${m.substanceActiveValidee}`;
+        datalist.appendChild(opt);
+    });
+}
+
+async function searchMedicament(query) {
+    const q = query !== undefined ? query : document.getElementById('searchQueryInput').value.trim();
+    if (!q) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/public/medicaments/recherche?q=${encodeURIComponent(q)}`);
+        const results = await res.json();
+
+        if (results && results.length > 0) {
+            state.selectedMedicament = results[0];
+            await loadDisponibilitesForMedicament(state.selectedMedicament.id);
+        } else {
+            renderZeroResults(q);
+        }
+    } catch (e) {
+        console.error('Erreur lors de la recherche', e);
+    }
+}
+
+async function loadDisponibilitesForMedicament(medicamentId) {
+    try {
+        const res = await fetch(`${API_BASE}/public/medicaments/${medicamentId}/disponibilites`);
+        const dispos = await res.json();
+        state.disponibilitesList = dispos;
+        applyFiltersAndRender();
+    } catch (e) {
+        console.error('Erreur chargement disponibilités', e);
+    }
+}
+
+function applyFiltersAndRender() {
+    const quartierFilter = document.getElementById('filterQuartier').value;
+    const gardeFilter = document.getElementById('filterGardeOnly').checked;
+
+    let filtered = [...state.disponibilitesList];
+
+    if (quartierFilter) {
+        filtered = filtered.filter(d => (d.pharmacieQuartier || '').toLowerCase() === quartierFilter.toLowerCase());
+    }
+    if (gardeFilter) {
+        filtered = filtered.filter(d => d.pharmacieDeGarde === true);
+    }
+
+    renderDisponibilitesResults(filtered);
+    updateMapMarkers(filtered);
+}
+
+function renderDisponibilitesResults(dispos) {
+    const container = document.getElementById('searchResultsContainer');
+    const medHeader = document.getElementById('selectedMedicineHeader');
+
+    if (!state.selectedMedicament) {
+        container.innerHTML = '<p class="text-muted">Saisissez un médicament ci-dessus pour lancer la recherche.</p>';
+        return;
+    }
+
+    medHeader.innerHTML = `
+        <div class="medicine-info-card">
+            <div>
+                <div class="medicine-info-title">💊 ${state.selectedMedicament.nomCommercial} ${state.selectedMedicament.dosage}</div>
+                <div class="medicine-info-subtitle">Forme : ${state.selectedMedicament.forme} · DCI : <strong>${state.selectedMedicament.substanceActiveValidee}</strong></div>
+            </div>
+            <div style="font-size: 0.85rem; color: #065f46; font-weight: 600;">
+                ${dispos.length} officine(s) déclarée(s)
+            </div>
+        </div>
+    `;
+
+    if (dispos.length === 0) {
+        container.innerHTML = `
+            <div class="pharmacy-card" style="text-align: center; padding: 30px;">
+                <p style="font-size: 1.1rem; font-weight: 600; color: #b45309; margin-bottom: 8px;">
+                    ⚠️ Aucune disponibilité confirmée actuellement pour ce médicament dans la zone sélectionnée.
+                </p>
+                <p style="font-size: 0.9rem; color: #64748b; margin-bottom: 16px;">
+                    Les pharmacies partenaires actualisent régulièrement leurs données. Vous pouvez élargir votre filtre de quartier ou contacter directement les pharmacies de garde de Lomé ci-dessous.
+                </p>
+                <button class="btn btn-primary" onclick="switchTab('gardes')">Consulter les pharmacies de garde</button>
+            </div>
+        `;
+        return;
+    }
+
+    // Tri prioritaire : 1. Confirmée récemment, 2. À confirmer, 3. Non disponible
+    const sorted = [...dispos].sort((a, b) => {
+        const order = { 'CONFIRMEE_RECEMMENT': 1, 'A_CONFIRMER': 2, 'INFORMATION_INDISPONIBLE': 3, 'NON_DISPONIBLE': 4 };
+        return (order[a.statut] || 99) - (order[b.statut] || 99);
+    });
+
+    let html = '';
+    sorted.forEach(d => {
+        const dateObj = new Date(d.dateConfirmation);
+        const formattedDate = dateObj.toLocaleDateString('fr-FR', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        const statusClass = `status-${d.statut}`;
+        let statusIcon = '🟢';
+        if (d.statut === 'A_CONFIRMER') statusIcon = '🟡';
+        if (d.statut === 'NON_DISPONIBLE') statusIcon = '🔴';
+        if (d.statut === 'INFORMATION_INDISPONIBLE') statusIcon = '⚪';
+
+        html += `
+            <div class="pharmacy-card" id="card-pharma-${d.pharmacieId}">
+                <div class="pharmacy-header">
+                    <div>
+                        <div class="pharmacy-name">${d.pharmacieNom}</div>
+                        <div style="font-size: 0.85rem; color: #64748b;">📍 ${d.pharmacieAdresse} (${d.pharmacieQuartier})</div>
+                    </div>
+                    <div class="pharmacy-badges">
+                        ${d.pharmacieDeGarde ? '<span class="badge badge-garde">⚡ De garde</span>' : ''}
+                        <span class="badge badge-verified">✓ Vérifiée</span>
+                    </div>
+                </div>
+
+                <div>
+                    <span class="status-pill ${statusClass}">
+                        ${statusIcon} ${d.statutLibelle}
+                    </span>
+                </div>
+
+                <div class="timestamp-note">
+                    🕒 Déclaré le <strong>${formattedDate}</strong> par <em>${d.utilisateurConfirmateur || 'Responsable'}</em>
+                    ${d.statut === 'A_CONFIRMER' ? '<br/><span style="color: #b45309;">⚠️ Déclaration datant de plus de 48h. Vérification téléphonique indispensable.</span>' : ''}
+                </div>
+
+                <div class="pharmacy-actions">
+                    <a href="tel:${d.pharmacieTelephone}" class="btn btn-call" title="Appeler pour confirmer">
+                        📞 Appeler (${d.pharmacieTelephone})
+                    </a>
+                    <a href="https://www.google.com/maps/dir/?api=1&destination=${d.pharmacieLatitude},${d.pharmacieLongitude}" target="_blank" class="btn btn-outline">
+                        🗺️ Itinéraire
+                    </a>
+                    <button class="btn-report" onclick="openReportModal('DISPONIBILITE', ${d.id}, '${d.pharmacieNom} - ${d.nomCommercial}')">
+                        ⚠️ Signaler une erreur
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+function renderZeroResults(query) {
+    const medHeader = document.getElementById('selectedMedicineHeader');
+    const container = document.getElementById('searchResultsContainer');
+    medHeader.innerHTML = '';
+    container.innerHTML = `
+        <div class="pharmacy-card" style="text-align: center; padding: 30px;">
+            <p style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 6px;">
+                Aucun médicament correspondant à « ${query} » dans le catalogue officiel.
+            </p>
+            <p style="font-size: 0.88rem; color: #64748b; margin-bottom: 16px;">
+                Vérifiez l'orthographe du nom ou essayez avec la dénomination commune internationale (ex: Paracétamol, Amoxicilline).
+            </p>
+            <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                <button class="pill" style="background:#0d9488;" onclick="searchMedicament('Paracétamol')">Paracétamol</button>
+                <button class="pill" style="background:#0d9488;" onclick="searchMedicament('Coartem')">Coartem</button>
+                <button class="pill" style="background:#0d9488;" onclick="searchMedicament('Amoxicilline')">Amoxicilline</button>
+            </div>
+        </div>
+    `;
+}
+
+function focusCard(pharmaId) {
+    const el = document.getElementById(`card-pharma-${pharmaId}`);
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.borderColor = '#0d9488';
+        el.style.backgroundColor = '#f0fdfa';
+        setTimeout(() => {
+            el.style.borderColor = '#e2e8f0';
+            el.style.backgroundColor = '#ffffff';
+        }, 1500);
+    }
+}
+
+// ============================================================================
+// VUE PHARMACIES DE GARDE
+// ============================================================================
+async function loadGardesView() {
+    const container = document.getElementById('gardesListContainer');
+    container.innerHTML = '<p class="text-muted">Chargement des officines de garde officielles...</p>';
+
+    try {
+        const res = await fetch(`${API_BASE}/public/pharmacies?deGarde=true`);
+        const pharmacies = await res.json();
+
+        if (pharmacies.length === 0) {
+            container.innerHTML = '<p class="text-muted">Aucune garde renseignée pour cette période.</p>';
+            return;
+        }
+
+        let html = `
+            <div style="background:#fefce8; border:1px solid #fef08a; padding:12px 16px; border-radius:8px; margin-bottom:20px; font-size:0.9rem; color:#854d0e;">
+                📢 <strong>Source officielle</strong> : Données conformes au tableau de garde de l'Ordre National des Pharmaciens du Togo et de l'INAM.
+                Règle de sécurité : <em>Appelez impérativement avant tout déplacement de nuit.</em>
+            </div>
+            <div class="results-list">
+        `;
+
+        pharmacies.forEach(p => {
+            html += `
+                <div class="pharmacy-card">
+                    <div class="pharmacy-header">
+                        <div>
+                            <div class="pharmacy-name">${p.nom}</div>
+                            <div style="font-size:0.85rem; color:#64748b;">📍 ${p.adresse} (${p.quartier})</div>
+                        </div>
+                        <span class="badge badge-garde">⚡ De Garde 24h/24</span>
+                    </div>
+                    <div style="margin: 8px 0; font-size: 0.9rem;">
+                        ⏰ Horaires de garde : <strong>${p.horairesTexte}</strong>
+                    </div>
+                    <div class="pharmacy-actions">
+                        <a href="tel:${p.telephone}" class="btn btn-call">📞 Appeler (${p.telephone})</a>
+                        <a href="https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}" target="_blank" class="btn btn-outline">🗺️ Itinéraire</a>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = '<p style="color:red;">Erreur lors du chargement des gardes.</p>';
+    }
+}
+
+// ============================================================================
+// MODAL SIGNALEMENT CITOYEN (Section 8.1 & 13.8)
+// ============================================================================
+function openReportModal(typeObjet, objetId, titre) {
+    state.selectedPharmacieForReport = { typeObjet, objetId };
+    document.getElementById('reportSubject').innerText = titre;
+    document.getElementById('reportModal').style.display = 'flex';
+}
+
+function closeReportModal() {
+    document.getElementById('reportModal').style.display = 'none';
+}
+
+async function submitSignalement() {
+    const motif = document.getElementById('reportMotif').value;
+    const desc = document.getElementById('reportComment').value.trim();
+
+    if (!state.selectedPharmacieForReport) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/public/signalements`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                typeObjet: state.selectedPharmacieForReport.typeObjet,
+                objetId: state.selectedPharmacieForReport.objetId,
+                motif: motif,
+                descriptionMinimisee: desc
+            })
+        });
+
+        if (res.ok) {
+            alert('Merci ! Votre signalement a été transmis à l\'équipe de modération de PharmaFind.');
+            closeReportModal();
+            document.getElementById('reportComment').value = '';
+        } else {
+            alert('Une erreur est survenue lors de l\'envoi du signalement.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Erreur réseau.');
+    }
+}
+
+// ============================================================================
+// AUTHENTIFICATION & SESSIONS
+// ============================================================================
+async function checkSession() {
+    if (!state.token) {
+        updateAuthUI(null);
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/auth/me`, {
+            headers: { 'Authorization': `Bearer ${state.token}` }
+        });
+        if (res.ok) {
+            state.currentUser = await res.json();
+            updateAuthUI(state.currentUser);
+        } else {
+            logout();
+        }
+    } catch (e) {
+        logout();
+    }
+}
+
+function updateAuthUI(user) {
+    const authStatusEl = document.getElementById('authStatusIndicator');
+    if (!authStatusEl) return;
+
+    if (user) {
+        authStatusEl.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85rem; font-weight:600; color:#0f766e;">👤 ${user.nomAffichage} (${user.role.replace('ROLE_', '')})</span>
+                <button onclick="logout()" style="background:transparent; border:1px solid #cbd5e1; border-radius:4px; padding:3px 8px; font-size:0.75rem; cursor:pointer;">Déconnexion</button>
+            </div>
+        `;
+    } else {
+        authStatusEl.innerHTML = `
+            <button onclick="switchTab('pro')" style="background:var(--primary); color:white; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:600; cursor:pointer;">Espace Officine / Admin</button>
+        `;
+    }
+}
+
+async function loginUser(identifiant, motDePasse) {
+    try {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifiant, motDePasse })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            state.token = data.token;
+            localStorage.setItem('pharmafind_token', data.token);
+            await checkSession();
+            if (data.role === 'ROLE_ADMIN') {
+                switchTab('admin');
+            } else {
+                switchTab('pro');
+            }
+        } else {
+            alert('Identifiants incorrects.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Erreur réseau lors de la connexion.');
+    }
+}
+
+function logout() {
+    state.token = null;
+    state.currentUser = null;
+    localStorage.removeItem('pharmafind_token');
+    updateAuthUI(null);
+    switchTab('search');
+}
+
+// ============================================================================
+// ESPACE PROFESSIONNEL (PHARMACIEN)
+// ============================================================================
+async function loadProView() {
+    const container = document.getElementById('proViewContainer');
+
+    if (!state.currentUser || (state.currentUser.role !== 'ROLE_PHARMACIE' && state.currentUser.role !== 'ROLE_ADMIN')) {
+        renderProLoginForm(container);
+        return;
+    }
+
+    container.innerHTML = '<p class="text-muted">Chargement de votre officine...</p>';
+
+    try {
+        const [pharmaRes, disposRes, medsRes, auditRes] = await Promise.all([
+            fetch(`${API_BASE}/pro/ma-pharmacie`, { headers: { 'Authorization': `Bearer ${state.token}` } }),
+            fetch(`${API_BASE}/pro/disponibilites`, { headers: { 'Authorization': `Bearer ${state.token}` } }),
+            fetch(`${API_BASE}/public/medicaments`),
+            fetch(`${API_BASE}/pro/audit`, { headers: { 'Authorization': `Bearer ${state.token}` } })
+        ]);
+
+        if (!pharmaRes.ok) {
+            container.innerHTML = '<p class="text-muted">Aucune officine rattachée à ce compte administrateur.</p>';
+            return;
+        }
+
+        const pharma = await pharmaRes.json();
+        const dispos = await disposRes.json();
+        const allMeds = await medsRes.json();
+        const audits = await auditRes.json();
+
+        renderProDashboard(container, pharma, dispos, allMeds, audits);
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="color:red;">Erreur lors du chargement de l\'espace professionnel.</p>';
+    }
+}
+
+function renderProLoginForm(container) {
+    container.innerHTML = `
+        <div style="max-width:440px; margin:30px auto; background:white; padding:28px; border-radius:10px; border:1px solid #e2e8f0; box-shadow:var(--shadow);">
+            <h3 style="font-size:1.3rem; font-weight:700; margin-bottom:6px; color:#0f766e;">Connexion Espace Officine</h3>
+            <p style="font-size:0.85rem; color:#64748b; margin-bottom:20px;">Accès réservé au personnel officinal autorisé pour l'actualisation des disponibilités.</p>
+
+            <form onsubmit="event.preventDefault(); loginUser(document.getElementById('proLoginEmail').value, document.getElementById('proLoginPass').value);">
+                <div class="form-group">
+                    <label>Email de connexion</label>
+                    <input type="email" id="proLoginEmail" class="form-control" required placeholder="ex: pharmacien.golfe@pharmafind.tg" />
+                </div>
+                <div class="form-group">
+                    <label>Mot de passe</label>
+                    <input type="password" id="proLoginPass" class="form-control" required placeholder="••••••••" />
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:10px; padding:10px;">Se connecter</button>
+            </form>
+
+            <div style="margin-top:24px; padding-top:16px; border-top:1px dashed #cbd5e1; font-size:0.85rem;">
+                <strong>Comptes démo officines (Lomé) :</strong><br/>
+                <button onclick="loginUser('pharmacien.golfe@pharmafind.tg', 'Pharmacie123!')" style="margin-top:6px; background:#f1f5f9; border:1px solid #cbd5e1; padding:5px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;">
+                    🔑 Dr. Kueviakoe (Pharmacie du Golfe)
+                </button>
+                <button onclick="loginUser('pharmacien.be@pharmafind.tg', 'Pharmacie123!')" style="margin-top:6px; background:#f1f5f9; border:1px solid #cbd5e1; padding:5px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;">
+                    🔑 Dr. Mensah (Pharmacie de Bé)
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderProDashboard(container, pharma, dispos, allMeds, audits) {
+    const dispoMedIds = new Set(dispos.map(d => d.medicamentId));
+    const unlistedMeds = allMeds.filter(m => !dispoMedIds.has(m.id));
+
+    let html = `
+        <div style="margin-bottom:24px; background:white; padding:20px; border-radius:10px; border:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+            <div>
+                <h2 style="font-size:1.4rem; font-weight:800; color:#0f766e;">🏥 ${pharma.nom}</h2>
+                <div style="font-size:0.9rem; color:#64748b;">📍 ${pharma.adresse} (${pharma.quartier}) · 📞 ${pharma.telephone}</div>
+                <div style="font-size:0.85rem; margin-top:4px;">⏰ Horaires déclarés : <strong>${pharma.horairesTexte}</strong></div>
+            </div>
+            <div>
+                <button class="btn btn-outline" onclick="promptUpdateHoraires()">✏️ Modifier les horaires</button>
+            </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+            <h3 style="font-size:1.15rem; font-weight:700;">Gestion des disponibilités en 1 clic</h3>
+            <div style="display:flex; gap:8px;">
+                <select id="addMedicamentSelect" class="form-control" style="max-width:320px;">
+                    <option value="">+ Ajouter un médicament du catalogue...</option>
+                    ${unlistedMeds.map(m => `<option value="${m.id}">${m.nomCommercial} ${m.dosage} (${m.forme})</option>`).join('')}
+                </select>
+                <button class="btn btn-primary" onclick="addMedicineToPharmacie()">Ajouter</button>
+            </div>
+        </div>
+
+        <div class="table-responsive" style="margin-bottom:30px;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Médicament</th>
+                        <th>Dosage & Forme</th>
+                        <th>Statut Actuel</th>
+                        <th>Dernière Confirmation</th>
+                        <th style="text-align:right;">Actions rapides</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    dispos.forEach(d => {
+        const dateObj = new Date(d.dateConfirmation);
+        const dateStr = dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const statusClass = `status-${d.statut}`;
+
+        html += `
+            <tr>
+                <td><strong>${d.nomCommercial}</strong><br/><span style="font-size:0.75rem; color:#64748b;">DCI: ${d.substanceActiveValidee}</span></td>
+                <td>${d.dosage} · ${d.forme}</td>
+                <td><span class="status-pill ${statusClass}" style="font-size:0.78rem;">${d.statutLibelle}</span></td>
+                <td>${dateStr}</td>
+                <td style="text-align:right;">
+                    <button onclick="updateDispoStatus(${d.medicamentId}, 'CONFIRMEE_RECEMMENT')" style="background:#dcfce7; border:1px solid #86efac; color:#166534; font-weight:700; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:0.78rem;">🟢 DISPONIBLE</button>
+                    <button onclick="updateDispoStatus(${d.medicamentId}, 'NON_DISPONIBLE')" style="background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; font-weight:700; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:0.78rem;">🔴 RUPTURE</button>
+                    <button onclick="updateDispoStatus(${d.medicamentId}, 'A_CONFIRMER')" style="background:#fef9c3; border:1px solid #fde047; color:#854d0e; font-weight:700; border-radius:4px; padding:4px 8px; cursor:pointer; font-size:0.78rem;">🟡 À CONFIRMER</button>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:12px;">📜 Historique d'audit de votre officine (Traçabilité)</h3>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Auteur</th>
+                        <th>Action</th>
+                        <th>Détails</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    audits.slice(0, 10).forEach(a => {
+        const dStr = new Date(a.dateAction).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        html += `
+            <tr>
+                <td style="white-space:nowrap;">${dStr}</td>
+                <td>${a.utilisateurNom || 'Système'}</td>
+                <td><span style="font-weight:600; font-size:0.8rem;">${a.action}</span></td>
+                <td>${a.resultat || ''}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+async function updateDispoStatus(medicamentId, newStatus) {
+    try {
+        const res = await fetch(`${API_BASE}/pro/disponibilites`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ medicamentId, statut: newStatus })
+        });
+        if (res.ok) {
+            await loadProView();
+            // Rafraîchir la recherche publique en arrière-plan
+            if (state.selectedMedicament) {
+                await loadDisponibilitesForMedicament(state.selectedMedicament.id);
+            }
+        } else {
+            alert('Erreur lors de la mise à jour de la disponibilité.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Erreur réseau.');
+    }
+}
+
+async function addMedicineToPharmacie() {
+    const medId = document.getElementById('addMedicamentSelect').value;
+    if (!medId) return;
+    await updateDispoStatus(Number(medId), 'CONFIRMEE_RECEMMENT');
+}
+
+async function promptUpdateHoraires() {
+    const nouv = prompt('Saisissez les nouveaux horaires d\'ouverture habituels : (ex: 07h30 - 22h00)');
+    if (!nouv || !nouv.trim()) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/pro/pharmacie/horaires`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ horairesTexte: nouv.trim() })
+        });
+        if (res.ok) {
+            alert('Horaires mis à jour.');
+            await loadProView();
+        }
+    } catch (e) {
+        alert('Erreur de mise à jour.');
+    }
+}
+
+// ============================================================================
+// ESPACE ADMINISTRATION
+// ============================================================================
+async function loadAdminView() {
+    const container = document.getElementById('adminViewContainer');
+
+    if (!state.currentUser || state.currentUser.role !== 'ROLE_ADMIN') {
+        renderAdminLoginForm(container);
+        return;
+    }
+
+    container.innerHTML = '<p class="text-muted">Chargement du panneau d\'administration...</p>';
+
+    try {
+        const [pharmaciesRes, signalementsRes, auditsRes, medsRes] = await Promise.all([
+            fetch(`${API_BASE}/admin/pharmacies`, { headers: { 'Authorization': `Bearer ${state.token}` } }),
+            fetch(`${API_BASE}/admin/signalements`, { headers: { 'Authorization': `Bearer ${state.token}` } }),
+            fetch(`${API_BASE}/admin/audit`, { headers: { 'Authorization': `Bearer ${state.token}` } }),
+            fetch(`${API_BASE}/public/medicaments`)
+        ]);
+
+        const pharmacies = await pharmaciesRes.json();
+        const signalements = await signalementsRes.json();
+        const audits = await auditsRes.json();
+        const meds = await medsRes.json();
+
+        renderAdminDashboard(container, pharmacies, signalements, audits, meds);
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p style="color:red;">Erreur lors du chargement de l\'administration.</p>';
+    }
+}
+
+function renderAdminLoginForm(container) {
+    container.innerHTML = `
+        <div style="max-width:440px; margin:30px auto; background:white; padding:28px; border-radius:10px; border:1px solid #e2e8f0; box-shadow:var(--shadow);">
+            <h3 style="font-size:1.3rem; font-weight:700; margin-bottom:6px; color:#1e293b;">Administration PharmaFind</h3>
+            <p style="font-size:0.85rem; color:#64748b; margin-bottom:20px;">Connexion réservée aux gestionnaires de la plateforme.</p>
+
+            <form onsubmit="event.preventDefault(); loginUser(document.getElementById('adminLoginEmail').value, document.getElementById('adminLoginPass').value);">
+                <div class="form-group">
+                    <label>Identifiant Administrateur</label>
+                    <input type="email" id="adminLoginEmail" class="form-control" required placeholder="admin@pharmafind.tg" />
+                </div>
+                <div class="form-group">
+                    <label>Mot de passe</label>
+                    <input type="password" id="adminLoginPass" class="form-control" required placeholder="••••••••" />
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%; margin-top:10px; padding:10px; background:#1e293b;">Connexion Admin</button>
+            </form>
+
+            <div style="margin-top:24px; padding-top:16px; border-top:1px dashed #cbd5e1; font-size:0.85rem;">
+                <strong>Identifiants de test démo :</strong><br/>
+                <button onclick="loginUser('admin@pharmafind.tg', 'Admin123!')" style="margin-top:6px; background:#f1f5f9; border:1px solid #cbd5e1; padding:5px 8px; border-radius:4px; font-size:0.8rem; cursor:pointer;">
+                    🔑 Connexion Administrateur ADN
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminDashboard(container, pharmacies, signalements, audits, meds) {
+    let html = `
+        <div class="dashboard-grid">
+            <div class="stat-card">
+                <div class="stat-number">${pharmacies.length}</div>
+                <div class="stat-label">Officines à Lomé</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${meds.length}</div>
+                <div class="stat-label">Médicaments Référencés</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${signalements.length}</div>
+                <div class="stat-label">Signalements Citoyens</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${audits.length}</div>
+                <div class="stat-label">Événements Journalisés</div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:24px; background:white; padding:20px; border-radius:10px; border:1px solid #e2e8f0;">
+            <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:12px;">➕ Ajouter un médicament au catalogue de référence</h3>
+            <form onsubmit="event.preventDefault(); submitNewMedicine();" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; align-items:end;">
+                <div>
+                    <label style="font-size:0.8rem; font-weight:600;">Nom Commercial</label>
+                    <input type="text" id="newMedNom" class="form-control" required placeholder="ex: Efferalgan" />
+                </div>
+                <div>
+                    <label style="font-size:0.8rem; font-weight:600;">DCI / Substance</label>
+                    <input type="text" id="newMedDci" class="form-control" required placeholder="ex: Paracétamol" />
+                </div>
+                <div>
+                    <label style="font-size:0.8rem; font-weight:600;">Dosage</label>
+                    <input type="text" id="newMedDosage" class="form-control" required placeholder="ex: 1000 mg" />
+                </div>
+                <div>
+                    <label style="font-size:0.8rem; font-weight:600;">Forme</label>
+                    <input type="text" id="newMedForme" class="form-control" required placeholder="ex: Comprimé effervescent" />
+                </div>
+                <div>
+                    <button type="submit" class="btn btn-primary" style="width:100%;">Enregistrer</button>
+                </div>
+            </form>
+        </div>
+
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:12px;">🚨 Signalements reçus des patients</h3>
+        <div class="table-responsive" style="margin-bottom:30px;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Motif</th>
+                        <th>Description</th>
+                        <th>Statut</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    if (signalements.length === 0) {
+        html += '<tr><td colspan="6" style="text-align:center; color:#64748b;">Aucun signalement en attente.</td></tr>';
+    } else {
+        signalements.forEach(s => {
+            const dStr = new Date(s.dateCreation).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            html += `
+                <tr>
+                    <td>${dStr}</td>
+                    <td><span class="badge badge-verified">${s.typeObjet}</span></td>
+                    <td><strong>${s.motif}</strong></td>
+                    <td>${s.descriptionMinimisee || '-'}</td>
+                    <td><span style="font-weight:700;">${s.statutTraitement}</span></td>
+                    <td>
+                        <button onclick="updateSignalement(${s.id}, 'TRAITE')" style="background:#dcfce7; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">Valider</button>
+                        <button onclick="updateSignalement(${s.id}, 'REJETE')" style="background:#fee2e2; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">Rejeter</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+
+        <h3 style="font-size:1.15rem; font-weight:700; margin-bottom:12px;">🛡️ Journal d'Audit Complet (Sécurité & Traçabilité)</h3>
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Utilisateur</th>
+                        <th>Action</th>
+                        <th>Objet</th>
+                        <th>Résultat</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    audits.slice(0, 15).forEach(a => {
+        const dStr = new Date(a.dateAction).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        html += `
+            <tr>
+                <td style="white-space:nowrap;">${dStr}</td>
+                <td>${a.utilisateurNom || 'Système'}</td>
+                <td><span style="font-weight:600; font-size:0.8rem; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${a.action}</span></td>
+                <td>${a.typeObjet} #${a.objetId || ''}</td>
+                <td>${a.resultat || '-'}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+async function submitNewMedicine() {
+    const nom = document.getElementById('newMedNom').value.trim();
+    const dci = document.getElementById('newMedDci').value.trim();
+    const dosage = document.getElementById('newMedDosage').value.trim();
+    const forme = document.getElementById('newMedForme').value.trim();
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/medicaments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({
+                nomCommercial: nom,
+                substanceActiveValidee: dci,
+                dosage: dosage,
+                forme: forme
+            })
+        });
+
+        if (res.ok) {
+            alert('Médicament ajouté avec succès au catalogue.');
+            await loadInitialMedicaments();
+            await loadAdminView();
+        } else {
+            alert('Erreur lors de l\'ajout du médicament.');
+        }
+    } catch (e) {
+        alert('Erreur réseau.');
+    }
+}
+
+async function updateSignalement(id, statut) {
+    try {
+        const res = await fetch(`${API_BASE}/admin/signalements/${id}/statut`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.token}`
+            },
+            body: JSON.stringify({ statut })
+        });
+        if (res.ok) {
+            await loadAdminView();
+        }
+    } catch (e) {
+        alert('Erreur de mise à jour.');
+    }
+}

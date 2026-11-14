@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: pharmafind-mysql
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: pharmafind
+      MYSQL_USER: pharmafind
+      MYSQL_PASSWORD: pharmafind123
+      MYSQL_ROOT_PASSWORD: root_pharmafind_secret
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "pharmafind", "-ppharmafind123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pharmafind-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: pharmafind
+      DB_USER: pharmafind
+      DB_PASSWORD: pharmafind123
+      PORT: 8080
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
