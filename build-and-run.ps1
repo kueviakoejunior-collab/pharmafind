@@ -1,6 +1,6 @@
-# Script PowerShell pour compiler et lancer PharmaFind
+# Script PowerShell pour compiler et lancer PharmaHelp
 Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host "   PharmaFind - Lancement Local (Lomé, Togo)" -ForegroundColor Cyan
+Write-Host "   PharmaHelp - Lancement Local (Lomé, Togo)" -ForegroundColor Cyan
 Write-Host "========================================================" -ForegroundColor Cyan
 
 $mvnPath = "C:\Program Files\JetBrains\IntelliJ IDEA Community Edition 2025.2.6.3\plugins\maven\lib\maven3\bin\mvn.cmd"
@@ -23,4 +23,4 @@ Write-Host " - Admin : admin@pharmafind.tg / Admin123!" -ForegroundColor White
 Write-Host " - Pharmacie Golfe : pharmacien.golfe@pharmafind.tg / Pharmacie123!" -ForegroundColor White
 Write-Host " - Pharmacie Bé : pharmacien.be@pharmafind.tg / Pharmacie123!`n" -ForegroundColor White
 
-java -jar target\pharmafind-1.0.0.jar
+java -jar target\pharmahelp-1.0.0.jar

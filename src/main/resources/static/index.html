@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PharmaFind — Trouver une pharmacie et ses disponibilités à Lomé (Togo)</title>
+    <title>PharmaHelp — Trouvez vos médicaments et les pharmacies disponibles à Lomé</title>
     <!-- Leaflet CSS pour la cartographie -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <!-- PharmaFind Custom CSS -->
+    <!-- PharmaHelp Custom CSS (Figma Design System) -->
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-    <!-- Bannière Urgences Médicales Lomé (Section 8.5 du Dossier de Conception) -->
+    <!-- Bannière Urgences Médicales Lomé -->
     <aside class="urgent-banner" aria-label="Informations urgentes">
         <div>
             🚨 <strong>URGENCES MÉDICALES LOMÉ :</strong> SAMU : <strong>118</strong> · CHU Sylvanus Olympio : <strong>(+228) 22 21 25 01</strong> · Police Secours : <strong>117</strong>
@@ -21,19 +21,19 @@
         </div>
     </aside>
 
-    <!-- Header & Navigation -->
+    <!-- Header & Navigation PharmaHelp -->
     <header class="app-header">
         <div class="header-container">
             <a href="#" class="brand" onclick="switchTab('search'); return false;">
                 <div class="brand-icon">✚</div>
                 <div class="brand-text">
-                    <h1>PHARMAFIND</h1>
-                    <span>Orientation Pharmaceutique · Lomé, Togo</span>
+                    <h1>Pharma<span>Help</span></h1>
+                    <small>Votre santé, plus accessible · Lomé, Togo</small>
                 </div>
             </a>
 
             <nav class="nav-tabs">
-                <button class="nav-tab active" data-tab="search">🔍 Rechercher un médicament</button>
+                <button class="nav-tab active" data-tab="search">🔍 Rechercher</button>
                 <button class="nav-tab" data-tab="gardes">⚡ Pharmacies de garde</button>
                 <button class="nav-tab" data-tab="pro">🏥 Espace Officine</button>
                 <button class="nav-tab" data-tab="admin">🛡️ Administration</button>
@@ -48,39 +48,127 @@
     <main class="container">
 
         <!-- ============================================================== -->
-        <!-- VUE 1 : RECHERCHE DE MÉDICAMENT & ORIENTATION PATIENT         -->
+        <!-- VUE 1 : RECHERCHE DE MÉDICAMENT & SCANNER D'ORDONNANCE        -->
         <!-- ============================================================== -->
         <section id="view-search">
-            <div class="search-hero">
-                <h2>Trouvez les pharmacies disposant de votre médicament</h2>
+            
+            <!-- Hero Card inspirée du prototype Figma -->
+            <div class="hero-figma-card">
+                <div class="hero-badge-tag">
+                    <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#76d6b6; margin-right:4px;"></span>
+                    Votre santé, plus accessible
+                </div>
+                <h2>Trouvez vos médicaments.<br/><span>Simplement.</span></h2>
                 <p>
-                    Recherchez parmi les officines de Lomé. Consultez les statuts de disponibilité <strong>déclarés et horodatés</strong> par les pharmaciens.
+                    Localisez les pharmacies de Lomé, vérifiez les stocks déclarés en temps réel et préparez votre retrait en quelques instants.
                 </p>
 
-                <div class="search-input-group">
-                    <input type="text" id="searchQueryInput" list="medicamentSuggestions" placeholder="Tapez le nom d'un médicament (ex: Paracétamol, Coartem, Amoxicilline)..." autocomplete="off" onkeydown="if(event.key === 'Enter') searchMedicament();">
-                    <datalist id="medicamentSuggestions"></datalist>
-                    <button type="button" onclick="searchMedicament()">Rechercher</button>
+                <!-- Switcher Figma : Saisie vs Scanner -->
+                <div class="search-mode-switcher">
+                    <button class="mode-btn active" id="btnModeText" onclick="setSearchMode('text')">
+                        🔍 Saisir un nom
+                    </button>
+                    <button class="mode-btn" id="btnModeScan" onclick="setSearchMode('scan')">
+                        📷 Scanner une ordonnance
+                    </button>
                 </div>
 
-                <div class="quick-pills">
-                    <span>Recherches courantes :</span>
-                    <button class="pill" onclick="document.getElementById('searchQueryInput').value='Paracétamol'; searchMedicament('Paracétamol');">Paracétamol</button>
-                    <button class="pill" onclick="document.getElementById('searchQueryInput').value='Coartem'; searchMedicament('Coartem');">Coartem (Paludisme)</button>
-                    <button class="pill" onclick="document.getElementById('searchQueryInput').value='Amoxicilline'; searchMedicament('Amoxicilline');">Amoxicilline</button>
-                    <button class="pill" onclick="document.getElementById('searchQueryInput').value='Sérum Physiologique'; searchMedicament('Sérum Physiologique');">Sérum Physiologique</button>
-                    <button class="pill" onclick="document.getElementById('searchQueryInput').value='Ibuprofène'; searchMedicament('Ibuprofène');">Ibuprofène</button>
+                <!-- Mode 1 : Saisie de nom -->
+                <div id="searchModeTextContainer">
+                    <div class="search-input-group">
+                        <input type="text" id="searchQueryInput" list="medicamentSuggestions" placeholder="Tapez le nom d'un médicament (ex: Paracétamol, Doliprane, Coartem, Amoxicilline)..." autocomplete="off" onkeydown="if(event.key === 'Enter') searchMedicament();">
+                        <datalist id="medicamentSuggestions"></datalist>
+                        <button type="button" class="btn-coral" onclick="searchMedicament()">
+                            <span>Rechercher</span> ➔
+                        </button>
+                    </div>
+
+                    <div class="quick-pills">
+                        <span>Recherches courantes :</span>
+                        <button class="pill" onclick="triggerQuickSearch('Paracétamol')">Paracétamol</button>
+                        <button class="pill" onclick="triggerQuickSearch('Doliprane')">Doliprane 1000mg</button>
+                        <button class="pill" onclick="triggerQuickSearch('Coartem')">Coartem (Paludisme)</button>
+                        <button class="pill" onclick="triggerQuickSearch('Amoxicilline')">Amoxicilline</button>
+                        <button class="pill" onclick="triggerQuickSearch('Sérum Physiologique')">Sérum Physiologique</button>
+                        <button class="pill" onclick="triggerQuickSearch('Ibuprofène')">Ibuprofène</button>
+                    </div>
                 </div>
+
+                <!-- Mode 2 : Scanner d'Ordonnance (Figma) -->
+                <div id="searchModeScanContainer" style="display: none;">
+                    <div class="scanner-card" id="scannerCardBox">
+                        <div class="scanner-viewfinder" id="scannerViewfinder">
+                            <div class="scanner-laser" id="scannerLaserBeam"></div>
+                            
+                            <div id="scannerIdlePrompt">
+                                <div style="font-size: 2.4rem; margin-bottom: 8px;">📷</div>
+                                <h3 style="font-size: 1.15rem; font-weight: 800; color: #173f38; margin-bottom: 4px;">Photographiez votre ordonnance</h3>
+                                <p style="font-size: 0.85rem; color: #738782; max-width: 320px; margin-bottom: 14px;">
+                                    Déposez une photo de votre ordonnance ou activez votre caméra pour identifier les médicaments.
+                                </p>
+                                <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
+                                    <label class="btn btn-coral" style="cursor:pointer; font-size:0.85rem; padding:8px 14px;">
+                                        📁 Importer un fichier
+                                        <input type="file" id="prescriptionFileInput" accept="image/*" style="display:none;" onchange="handlePrescriptionFile(event)">
+                                    </label>
+                                    <button class="btn btn-outline" style="font-size:0.85rem; padding:8px 14px; background:white;" onclick="startLiveCamera()">
+                                        🎥 Utiliser la caméra
+                                    </button>
+                                </div>
+                            </div>
+
+                            <video id="cameraVideo" style="display:none; width:100%; height:100%; object-fit:cover;" autoplay playsinline></video>
+                        </div>
+
+                        <!-- Bouton Démo 1-clic Figma -->
+                        <div style="margin-top: 14px;">
+                            <button class="btn btn-outline" style="font-size:0.82rem; background:white; color:#0e7869; border-color:#9cc4bc;" onclick="runDemoScan()">
+                                ✨ Essayer avec une ordonnance de démonstration
+                            </button>
+                        </div>
+
+                        <div style="margin-top: 12px; font-size: 0.78rem; color: #738782; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>🔒</span> Ordonnance chiffrée et supprimée après analyse (Données de santé protégées).
+                        </div>
+
+                        <!-- Boîte des résultats détectés -->
+                        <div class="detected-box" id="detectedPrescriptionBox">
+                            <h4>✓ Ordonnance analysée avec succès !</h4>
+                            <p style="font-size:0.85rem; color:#047857;">Médicaments identifiés sur votre ordonnance :</p>
+                            <div class="detected-list" id="detectedMedicinesList"></div>
+                            <button class="btn btn-coral" style="margin-top:10px; width:100%; justify-content:center;" onclick="searchDetectedPrescription()">
+                                Vérifier les stocks disponibles dans les officines de Lomé ➔
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistiques Figma sous le Hero -->
+                <div class="hero-stats-grid">
+                    <div class="stat-pill-box">
+                        <strong>350+</strong>
+                        <span>Pharmacies</span>
+                    </div>
+                    <div class="stat-pill-box">
+                        <strong>Temps réel</strong>
+                        <span>Disponibilités</span>
+                    </div>
+                    <div class="stat-pill-box">
+                        <strong>100%</strong>
+                        <span>Confidentiel</span>
+                    </div>
+                </div>
+
             </div>
 
             <!-- Filtres géographiques & statut -->
             <div class="filters-bar">
                 <div class="filters-left">
-                    <label for="filterQuartier" style="font-weight:600; font-size:0.9rem;">Quartier de Lomé :</label>
+                    <label for="filterQuartier">Quartier de Lomé :</label>
                     <select id="filterQuartier" class="filter-select" onchange="applyFiltersAndRender()">
                         <option value="">Tous les quartiers de Lomé</option>
                         <option value="Tokoin">Tokoin (Wuiti, Trésor, Ouest)</option>
-                        <option value="Bè">Bè (Marché, Pa de Souza, Klikamé)</option>
+                        <option value="Bè">Bè (Marché, Pa de Souza)</option>
                         <option value="Nyékonakpoé">Nyékonakpoé / Déckon</option>
                         <option value="Kodjoviakopé">Kodjoviakopé</option>
                         <option value="Agoè">Agoè-Nyivé (Assiyéyé)</option>
@@ -92,8 +180,8 @@
                         <span>⚡ De garde uniquement</span>
                     </label>
                 </div>
-                <div style="font-size:0.85rem; color:#64748b;">
-                    💡 <em>Appelez toujours la pharmacie avant tout déplacement pour confirmation.</em>
+                <div style="font-size:0.85rem; color:#738782;">
+                    💡 <em>Vérification téléphonique ou WhatsApp recommandée avant tout déplacement.</em>
                 </div>
             </div>
 
@@ -110,7 +198,7 @@
                     <div class="map-container">
                         <div class="map-header">
                             <span>🗺️ Carte des officines à Lomé</span>
-                            <span style="color:#0d9488;">Live</span>
+                            <span style="color:var(--brand-primary); font-weight:800;">● En direct</span>
                         </div>
                         <div id="lomeMap"></div>
                     </div>
@@ -123,8 +211,8 @@
         <!-- ============================================================== -->
         <section id="view-gardes" style="display: none;">
             <div style="margin-bottom:24px;">
-                <h2 style="font-size:1.6rem; font-weight:800; color:#0f766e; margin-bottom:6px;">Pharmacies de Garde à Lomé</h2>
-                <p style="color:#64748b;">Tableau officiel des officines ouvertes en dehors des horaires conventionnels (nuits, dimanches et jours fériés).</p>
+                <h2 style="font-size:1.6rem; font-weight:800; color:var(--brand-dark); margin-bottom:6px;">Pharmacies de Garde à Lomé</h2>
+                <p style="color:#738782;">Tableau officiel des officines ouvertes en dehors des horaires conventionnels (nuits, dimanches et jours fériés).</p>
             </div>
             <div id="gardesListContainer"></div>
         </section>
@@ -145,9 +233,51 @@
 
     </main>
 
-    <!-- ================================================================== -->
-    <!-- MODAL DE SIGNALEMENT D'ANOMALIE (Section 8.1 & 13.8)              -->
-    <!-- ================================================================== -->
+    <!-- ============================================================== -->
+    <!-- MODAL DE PRÉPARATION DE RETRAIT & CODE UNIQUE (FIGMA)          -->
+    <!-- ============================================================== -->
+    <div id="withdrawalModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>🛍️ Préparation de Retrait en Pharmacie</h3>
+                <button class="modal-close" onclick="closeWithdrawalModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.9rem; color:#738782; margin-bottom:12px;">
+                    Votre demande de préparation a été enregistrée pour :<br/>
+                    <strong style="color:var(--brand-dark); font-size:1.05rem;" id="withdrawalPharmaName">-</strong>
+                </p>
+
+                <div class="withdrawal-code-badge">
+                    <span style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:#738782; letter-spacing:0.12em;">Votre Code de Retrait Unique</span>
+                    <div class="withdrawal-code-number" id="withdrawalCodeText">PH-7842</div>
+                    <small style="color:#738782; font-size:0.8rem;">Présentez ce code ou ce message au comptoir.</small>
+                </div>
+
+                <div style="background:var(--bg-soft); padding:12px 14px; border-radius:8px; font-size:0.85rem; margin-bottom:18px;">
+                    <div>💊 <strong>Médicament(s) :</strong> <span id="withdrawalMedicineName">-</span></div>
+                    <div>📍 <strong>Adresse :</strong> <span id="withdrawalPharmaAddress">-</span></div>
+                    <div>🕒 <strong>Horaires :</strong> <span id="withdrawalPharmaHours">-</span></div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <a id="withdrawalWhatsAppBtn" href="#" target="_blank" class="btn btn-whatsapp" style="justify-content:center; padding:12px;">
+                        💬 Confirmer le retrait via WhatsApp
+                    </a>
+                    <a id="withdrawalCallBtn" href="#" class="btn btn-call" style="justify-content:center; padding:10px;">
+                        📞 Appeler directement la pharmacie
+                    </a>
+                    <button class="btn btn-outline" onclick="closeWithdrawalModal()" style="margin-top:6px;">
+                        Fermer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- MODAL DE SIGNALEMENT D'ANOMALIE                                -->
+    <!-- ============================================================== -->
     <div id="reportModal" class="modal-overlay" style="display: none;">
         <div class="modal-card">
             <div class="modal-header">
@@ -155,7 +285,7 @@
                 <button class="modal-close" onclick="closeReportModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <p style="font-size:0.85rem; color:#64748b; margin-bottom:14px;">
+                <p style="font-size:0.85rem; color:#738782; margin-bottom:14px;">
                     Objet : <strong id="reportSubject">-</strong>
                 </p>
                 <div class="form-group">
@@ -174,22 +304,22 @@
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
                     <button class="btn btn-outline" onclick="closeReportModal()">Annuler</button>
-                    <button class="btn btn-primary" onclick="submitSignalement()">Envoyer le signalement</button>
+                    <button class="btn btn-coral" onclick="submitSignalement()">Envoyer le signalement</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Footer Déontologique & Légal (Sections 10.7, 16 & 25) -->
+    <!-- Footer Déontologique & Légal PharmaHelp -->
     <footer class="app-footer">
         <div class="footer-container">
             <div>
-                <strong style="color:white; font-size:1.05rem;">PHARMAFIND TOGO</strong><br/>
-                <span style="font-size:0.8rem;">Projet porté par Junior Kueviakoe-Aho · ADN — Académie Digitale Numérique, Golfe 1</span>
+                <strong style="color:white; font-size:1.1rem; letter-spacing:-0.03em;">Pharma<span style="color:#7bd2b7;">Help</span></strong><br/>
+                <span style="font-size:0.8rem;">Votre santé, plus accessible · Projet porté par Junior Kueviakoe-Aho · ADN Golfe 1 (Lomé, Togo)</span>
             </div>
             <div class="footer-disclaimer">
-                <strong>Avertissement légal :</strong> PharmaFind est un outil d'orientation et de transparence d'information pharmaceutique. 
-                Il ne vend aucun médicament, ne pratique aucune livraison ni substitution thérapeutique et ne remplace en aucun cas l'avis d'un professionnel de santé habilité.
+                <strong>Avertissement déontologique :</strong> PharmaHelp est un service d'information et d'orientation pharmaceutique. 
+                Il ne vend aucun médicament en ligne, ne réalise aucune livraison ni substitution thérapeutique et ne remplace pas l'avis d'un professionnel de santé.
                 Conformité : Loi togolaise n° 2019-014 relative à la protection des données à caractère personnel.
             </div>
         </div>
@@ -197,7 +327,7 @@
 
     <!-- Leaflet JS pour la cartographie -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <!-- Script Applicatif -->
+    <!-- Script Applicatif PharmaHelp -->
     <script src="js/app.js"></script>
 </body>
 </html>

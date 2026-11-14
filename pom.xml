@@ -10,11 +10,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>tg.pharmafind</groupId>
-    <artifactId>pharmafind</artifactId>
+    <groupId>tg.pharmahelp</groupId>
+    <artifactId>pharmahelp</artifactId>
     <version>1.0.0</version>
-    <name>pharmafind</name>
-    <description>PharmaFind - Plateforme d'orientation et de recherche pharmaceutique à Lomé (Togo)</description>
+    <name>pharmahelp</name>
+    <description>PharmaHelp - Votre santé, plus accessible. Orientation pharmaceutique à Lomé (Togo)</description>
 
     <properties>
         <java.version>21</java.version>

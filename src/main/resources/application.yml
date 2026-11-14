@@ -1,6 +1,6 @@
 spring:
   application:
-    name: pharmafind
+    name: pharmahelp
   profiles:
     active: dev
 
