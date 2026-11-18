@@ -1,4 +1,5 @@
 # PHARMAHELP — Votre santé, plus accessible (Lomé, Togo)
+<!-- redeploy trigger -->
 
 > **Projet porté par Junior Kueviakoe-Aho**  
 > Structure : **ADN — Académie Digitale Numérique, Golfe 1 (Lomé, Togo)**  
