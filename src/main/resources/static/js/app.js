@@ -628,11 +628,49 @@ async function submitSignalement() {
 }
 
 // ============================================================================
-// AUTHENTIFICATION & SESSIONS
+// AUTHENTIFICATION & SESSIONS — avec fallback démo hors-ligne pour Vercel
 // ============================================================================
+
+// Comptes démo codés en dur pour Vercel (backend non disponible en statique)
+const DEMO_USERS = {
+    'admin@pharmafind.tg': {
+        password: 'Admin123!',
+        role: 'ROLE_ADMIN',
+        nomAffichage: 'Administrateur ADN',
+        pharmacieId: null,
+        pharmacieNom: null
+    },
+    'pharmacien.golfe@pharmafind.tg': {
+        password: 'Pharmacie123!',
+        role: 'ROLE_PHARMACIE',
+        nomAffichage: 'Dr. Kueviakoe',
+        pharmacieId: 1,
+        pharmacieNom: 'Pharmacie du Golfe'
+    },
+    'pharmacien.be@pharmafind.tg': {
+        password: 'Pharmacie123!',
+        role: 'ROLE_PHARMACIE',
+        nomAffichage: 'Dr. Mensah',
+        pharmacieId: 2,
+        pharmacieNom: 'Pharmacie de Bé'
+    }
+};
+
 async function checkSession() {
     if (!state.token) {
         updateAuthUI(null);
+        return;
+    }
+
+    // Mode démo hors-ligne (Vercel statique)
+    if (state.token === 'DEMO_TOKEN') {
+        const savedUser = localStorage.getItem('pharmahelp_demo_user');
+        if (savedUser) {
+            state.currentUser = JSON.parse(savedUser);
+            updateAuthUI(state.currentUser);
+        } else {
+            logout();
+        }
         return;
     }
 
@@ -647,6 +685,7 @@ async function checkSession() {
             logout();
         }
     } catch (e) {
+        // Backend inaccessible → déconnexion silencieuse
         logout();
     }
 }
@@ -656,9 +695,10 @@ function updateAuthUI(user) {
     if (!authStatusEl) return;
 
     if (user) {
+        const badge = state.token === 'DEMO_TOKEN' ? ' <span style="background:#fef9c3;color:#854d0e;border-radius:4px;padding:2px 6px;font-size:0.7rem;font-weight:700;">DÉMO</span>' : '';
         authStatusEl.innerHTML = `
             <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:0.85rem; font-weight:700; color:#0e7869;">👤 ${user.nomAffichage} (${user.role.replace('ROLE_', '')})</span>
+                <span style="font-size:0.85rem; font-weight:700; color:#0e7869;">👤 ${user.nomAffichage} (${user.role.replace('ROLE_', '')})${badge}</span>
                 <button onclick="logout()" style="background:transparent; border:1px solid #d4e1de; border-radius:4px; padding:3px 8px; font-size:0.75rem; cursor:pointer;">Déconnexion</button>
             </div>
         `;
@@ -670,6 +710,7 @@ function updateAuthUI(user) {
 }
 
 async function loginUser(identifiant, motDePasse) {
+    // 1. Essayer le vrai backend d'abord
     try {
         const res = await fetch(`${API_BASE}/auth/login`, {
             method: 'POST',
@@ -687,12 +728,39 @@ async function loginUser(identifiant, motDePasse) {
             } else {
                 switchTab('pro');
             }
-        } else {
+            return;
+        }
+        // Si le backend répond mais avec erreur auth
+        if (res.status === 401 || res.status === 403) {
+            // Ne pas tomber sur le fallback démo si le backend est dispo
             alert('Identifiants incorrects.');
+            return;
         }
     } catch (e) {
-        console.error(e);
-        alert('Erreur réseau lors de la connexion.');
+        // Backend inaccessible (Vercel statique) → passer au mode démo
+        console.warn('Backend indisponible, tentative de connexion en mode démo local…');
+    }
+
+    // 2. Fallback : authentification locale démo
+    const demoUser = DEMO_USERS[identifiant.trim().toLowerCase()];
+    if (demoUser && demoUser.password === motDePasse) {
+        state.token = 'DEMO_TOKEN';
+        state.currentUser = {
+            nomAffichage: demoUser.nomAffichage,
+            role: demoUser.role,
+            pharmacieId: demoUser.pharmacieId,
+            pharmacieNom: demoUser.pharmacieNom
+        };
+        localStorage.setItem('pharmahelp_token', 'DEMO_TOKEN');
+        localStorage.setItem('pharmahelp_demo_user', JSON.stringify(state.currentUser));
+        updateAuthUI(state.currentUser);
+        if (demoUser.role === 'ROLE_ADMIN') {
+            switchTab('admin');
+        } else {
+            switchTab('pro');
+        }
+    } else {
+        alert('Identifiants incorrects.\n\n📋 Comptes démo disponibles :\n• pharmacien.golfe@pharmafind.tg / Pharmacie123!\n• pharmacien.be@pharmafind.tg / Pharmacie123!\n• admin@pharmafind.tg / Admin123!');
     }
 }
 
@@ -700,6 +768,7 @@ function logout() {
     state.token = null;
     state.currentUser = null;
     localStorage.removeItem('pharmahelp_token');
+    localStorage.removeItem('pharmahelp_demo_user');
     updateAuthUI(null);
     switchTab('search');
 }
@@ -714,6 +783,41 @@ async function loadProView() {
         renderProLoginForm(container);
         return;
     }
+
+    // ── Mode démo hors-ligne (Vercel statique) ──────────────────────────────
+    if (state.token === 'DEMO_TOKEN') {
+        const pharmacieNom = state.currentUser.pharmacieNom || 'Pharmacie du Golfe';
+        const demoPharma = {
+            nom: pharmacieNom,
+            adresse: '15, Rue du Commerce',
+            quartier: 'Lomé-Golfe',
+            telephone: '+228 90 00 00 01',
+            horairesTexte: '07h30 - 22h00',
+            enGardeActuellement: true
+        };
+        // Filtrer les dispos correspondant à cette pharmacie démo
+        const demoDispos = FALLBACK_DISPOS
+            .filter(d => d.pharmacieId === (state.currentUser.pharmacieId || 1))
+            .map(d => {
+                const med = FALLBACK_MEDS.find(m => m.id === d.medicamentId) || {};
+                return {
+                    medicamentId: d.medicamentId,
+                    nomCommercial: med.nomCommercial || 'Médicament',
+                    substanceActiveValidee: med.substanceActiveValidee || '-',
+                    dosage: med.dosage || '-',
+                    forme: med.forme || '-',
+                    statut: d.statut,
+                    statutLibelle: d.statut === 'CONFIRMEE_RECEMMENT' ? '✅ Disponible' : d.statut === 'NON_DISPONIBLE' ? '❌ Rupture' : '🟡 À confirmer',
+                    dateConfirmation: new Date().toISOString()
+                };
+            });
+        const demoAudits = [
+            { dateAction: new Date().toISOString(), utilisateurNom: state.currentUser.nomAffichage, action: 'CONNEXION_DEMO', resultat: 'Mode démo Vercel activé' }
+        ];
+        renderProDashboard(container, demoPharma, demoDispos, FALLBACK_MEDS, demoAudits);
+        return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     container.innerHTML = '<p class="text-muted">Chargement de votre officine...</p>';
 
@@ -741,6 +845,7 @@ async function loadProView() {
         container.innerHTML = '<p style="color:red;">Erreur lors du chargement de l\'espace professionnel.</p>';
     }
 }
+
 
 function renderProLoginForm(container) {
     container.innerHTML = `
@@ -940,6 +1045,23 @@ async function loadAdminView() {
         renderAdminLoginForm(container);
         return;
     }
+
+    // ── Mode démo hors-ligne (Vercel statique) ──────────────────────────────
+    if (state.token === 'DEMO_TOKEN') {
+        // Utiliser les données statiques de fallback pour le tableau admin
+        const demoPharmacies = [
+            { id: 1, nom: 'Pharmacie du Golfe', adresse: '15 Rue du Commerce', quartier: 'Golfo', telephone: '+228 90 00 00 01' },
+            { id: 2, nom: 'Pharmacie de Bé', adresse: '24 Avenue des Champs', quartier: 'Bé', telephone: '+228 90 00 00 02' }
+        ];
+        const demoSignalements = [];
+        const demoAudits = [
+            { dateAction: new Date().toISOString(), utilisateurNom: state.currentUser.nomAffichage, action: 'CONNEXION_DEMO', resultat: 'Mode démo Vercel activé' }
+        ];
+        const demoMeds = FALLBACK_MEDS;
+        renderAdminDashboard(container, demoPharmacies, demoSignalements, demoAudits, demoMeds);
+        return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     container.innerHTML = '<p class="text-muted">Chargement de la modération...</p>';
 
