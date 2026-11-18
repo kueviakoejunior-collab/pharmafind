@@ -89,7 +89,19 @@ public class DisponibiliteService {
                 "Déclaration : " + medicament.getNomCommercial() + " -> " + saved.getStatut().getLibelle() + " à " + pharmacie.getNom());
 
         return toResponse(saved, LocalDateTime.now());
+
+    @Transactional
+    public DisponibiliteResponse adminUpdateStock(Long disponibiliteId, DisponibiliteUpdateRequest request, Long adminId, String adminNom) {
+        Disponibilite dispo = disponibiliteRepository.findById(disponibiliteId)
+                .orElseThrow(() -> new IllegalArgumentException("Disponibilité non trouvée : " + disponibiliteId));
+        dispo.setStatut(request.getStatut());
+        // Save the updated availability
+        Disponibilite saved = disponibiliteRepository.save(dispo);
+        auditService.logAction(adminId, adminNom, "MISE_A_JOUR_STOCK", "DISPONIBILITE", saved.getId(),
+                "Mise à jour du statut via admin : " + request.getStatut());
+        return toResponse(saved, LocalDateTime.now());
     }
+    
 
     /**
      * Tâche planifiée exécutée toutes les heures : bascule automatiquement les statuts

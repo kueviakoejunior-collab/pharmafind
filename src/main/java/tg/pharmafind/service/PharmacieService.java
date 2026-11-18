@@ -3,6 +3,7 @@ package tg.pharmafind.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tg.pharmafind.dto.PharmacieDto;
+import tg.pharmafind.dto.PharmacieRequest;
 import tg.pharmafind.entity.DisponibiliteStatut;
 import tg.pharmafind.entity.Pharmacie;
 import tg.pharmafind.repository.DisponibiliteRepository;
@@ -79,7 +80,33 @@ public class PharmacieService {
     }
 
     @Transactional
-    public Pharmacie updateHoraires(Long pharmacieId, String horairesTexte, Long userId, String userNom) {
+    public Pharmacie createPharmacy(PharmacieRequest request, Long adminId, String adminNom) {
+        // Validation: nom unique? (simplified)
+        Pharmacie p = new Pharmacie();
+        p.setNom(request.getNom());
+        p.setAdresse(request.getAdresse());
+        p.setQuartier(request.getQuartier());
+        p.setTelephone(request.getTelephone());
+        p.setLatitude(request.getLatitude());
+        p.setLongitude(request.getLongitude());
+        p.setHorairesTexte(request.getHorairesTexte());
+        p.setStatutValidation("EN_ATTENTE"); // default status
+        p.setDateMiseAJour(LocalDateTime.now());
+        Pharmacie saved = pharmacieRepository.save(p);
+        auditService.logAction(adminId, adminNom, "CREATION_PHARMACIE", "PHARMACIE", saved.getId(),
+                "Création de la pharmacie " + saved.getNom());
+        return saved;
+    }
+
+    @Transactional
+    public void deletePharmacy(Long pharmacieId, Long adminId, String adminNom) {
+        Pharmacie p = pharmacieRepository.findById(pharmacieId)
+                .orElseThrow(() -> new IllegalArgumentException("Pharmacie non trouvée avec l'id : " + pharmacieId));
+        pharmacieRepository.delete(p);
+        auditService.logAction(adminId, adminNom, "SUPPRESSION_PHARMACIE", "PHARMACIE", pharmacieId,
+                "Suppression de la pharmacie " + p.getNom());
+    }
+
         Pharmacie p = pharmacieRepository.findById(pharmacieId)
                 .orElseThrow(() -> new IllegalArgumentException("Pharmacie non trouvée avec l'id : " + id(pharmacieId)));
         p.setHorairesTexte(horairesTexte);

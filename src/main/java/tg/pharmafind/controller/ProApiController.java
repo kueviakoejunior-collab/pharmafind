@@ -12,6 +12,7 @@ import tg.pharmafind.entity.Pharmacie;
 import tg.pharmafind.entity.Utilisateur;
 import tg.pharmafind.service.AuditService;
 import tg.pharmafind.service.AuthService;
+import tg.pharmafind.service.WithdrawalCodeService;
 import tg.pharmafind.service.DisponibiliteService;
 import tg.pharmafind.service.PharmacieService;
 
@@ -26,6 +27,7 @@ public class ProApiController {
     private final AuthService authService;
     private final PharmacieService pharmacieService;
     private final DisponibiliteService disponibiliteService;
+    private final WithdrawalCodeService withdrawalCodeService;
     private final AuditService auditService;
 
     public ProApiController(AuthService authService,
